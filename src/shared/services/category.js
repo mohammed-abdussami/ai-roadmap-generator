@@ -10,7 +10,7 @@ class CategoryService {
             resolve(res.data.data.items);
           })
           .catch((err) => {
-            //reject(err);
+            reject(err);
           });
     });
   };

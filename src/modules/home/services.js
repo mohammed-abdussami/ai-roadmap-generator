@@ -5,7 +5,7 @@ class HomeService {
   createRoadmap = ({token, textOrder}) => {
     return new Promise((resolve, reject) => {
       mainApi
-        .post(HOME_API.CREATE_ROADMAP, {}, {
+        .get(HOME_API.CREATE_ROADMAP, {
           params:{
             token: token, 
             title: textOrder

@@ -42,7 +42,7 @@ const Categories = () => {
                 <Spacer y={2} />
                 <Row align={"center"}>
                     <Button onClick={backEvent} className={"backButton"} color={"default"} bordered>
-                        <Image className={"icon"} alt="back" height={25} width={25} src={'arrow-left.svg'} />
+                        <Image className="icon" alt="back" height={25} width={25} src='/arrow-left.svg'/>
                     </Button>
                     <Text className={"title"}>
                         Categories

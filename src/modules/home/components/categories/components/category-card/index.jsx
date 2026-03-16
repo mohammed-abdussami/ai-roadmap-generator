@@ -10,7 +10,7 @@ const CategoryCard = ({data}) => {
     <ComponentWithStyle>
           <Link href={makeUrl(LINKS.CATEGORY, {slug: data.slug})}>
               <div className={"iconContainer"}>
-                  <Image className={"icon"} alt="back" height={60} width={60} src={`category-icon/${data.slug}.svg`} />
+                  <Image className={"icon"} alt="back" height={60} width={60} src={`/category-icon/${data.slug}.svg`} />
                   <div className={"gradient"} />
               </div>
               <div className={"textContainer"}>

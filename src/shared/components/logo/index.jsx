@@ -9,7 +9,7 @@ const Logo = (props) => {
     return (
         <ComponentWithStyle className={className}>
           <Link href={LINKS.NEW_ROADMAP}>
-              <Image alt="logo" height={0} width={0} src={'/logo.svg'} />
+              <Image alt="logo" height={0} width={0} src='/logo.svg' />
               <Text span>
                   Ai Roadmap
                   <Text

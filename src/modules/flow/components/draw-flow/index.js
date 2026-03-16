@@ -25,8 +25,8 @@ const placeholderEdgeId = "edge-id-";
 const placeholderNodeIdClone = "node-id-clone-";
 const placeholderEdgeIdClone = "edge-id-clone-";
 const spaceBetweenMainBlock = 50;
-const nodeWidth = 300;
-const nodeHeight = 67;
+const nodeWidth = 380;
+const nodeHeight = 85;
 const offsetBaseLine = 300;
 
 const dagreGraphRight = new dagre.graphlib.Graph({
@@ -513,7 +513,9 @@ function DrawFlow({ data, onInit }) {
                         onInit(instance);
                     }}
                     fitViewOptions={{
-                        zoom: 2
+                        padding: 0.2,
+                        minZoom: 0.5,
+                        maxZoom: 3
                     }}
                     edges={edges}
                     onNodesChange={onNodesChange}

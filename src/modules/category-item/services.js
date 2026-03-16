@@ -15,7 +15,7 @@ class CategoryItemService {
           resolve(res.data.data);
         })
         .catch((err) => {
-          //reject(err);
+          reject(err);
         });
     });
   };

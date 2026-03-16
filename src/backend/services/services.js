@@ -9,23 +9,24 @@ class Services {
 
     // todo: this should be refactor , its not optimal way
     async checkAuth() {
-        console.log("check login");
+        console.log("🔐 [checkAuth] Starting authentication check");
         const cacheKey = "auth/cookie"
         const cachedToken = cacheData.get(cacheKey);
         if (cachedToken) {
             this.pb.authStore.save(cachedToken)
-            console.log("use cached token");
+            console.log("✓ [checkAuth] Using cached token");
 
             return true;
         } else {
             // if (this.isLoading) return
             this.isLoading = true;
             await new Promise((resolve, reject) => {
+                console.log("🔐 [checkAuth] Authenticating with credentials...");
                 return this.pb.admins.authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD).then(() => {
                     cacheData.put(cacheKey, this.pb.authStore.token, 1000 * 60 * 60 * 24 * 1); // 1 days 
-                    console.log("get new token");
+                    console.log("✓ [checkAuth] New token obtained and cached");
                 }).catch(e => {
-                    console.log("error on login", e);
+                    console.error("✗ [checkAuth] Authentication failed:", e?.message || e);
                 }).finally(() => {
                     this.isLoading = false
                     resolve();
@@ -67,9 +68,17 @@ class Services {
     }
     // categories 
     async getCategories() {
-        return await this.pb.collection(POCKETBASE_COLLECTIONS.CATEGORIES_EXTRA).getList(1, 99, {
-            sort: "category_index"
-        })
+        console.log("📦 [getCategories] Fetching categories from PocketBase...");
+        try {
+            const result = await this.pb.collection(POCKETBASE_COLLECTIONS.CATEGORIES_EXTRA).getList(1, 99, {
+                sort: "category_index"
+            });
+            console.log("✓ [getCategories] Successfully fetched", result.items.length, "categories");
+            return result;
+        } catch(e) {
+            console.error("✗ [getCategories] Failed to fetch categories:", e?.message || e);
+            throw e;
+        }
     }
     // roadmaps by category + pagination
     async getRoadmapsByCategorySlug({ page = 1, perPage = 24, slug } = {}) {
@@ -126,7 +135,7 @@ export const backendServices = new Proxy(new Services(), {
             // Otherwise, return a new function that first calls "checkAuth", then calls the original method
             return async function (...args) {
                 await target.checkAuth();
-                const result = origMethod.apply(target, args);
+                const result = await origMethod.apply(target, args);
                 return result;
             };
         }
