@@ -66,6 +66,7 @@ const dataToDataNode = async (nodes) => {
             data: {
                 clone: !!nodeIsClone,
                 level: _node.level,
+                title: nodeIsClone ? "" : _node.title,
                 label:
                     nodeIsClone ? "" :
                         <div>
@@ -529,5 +530,3 @@ function DrawFlow({ data, onInit }) {
 }
 
 export default DrawFlow;
-
-

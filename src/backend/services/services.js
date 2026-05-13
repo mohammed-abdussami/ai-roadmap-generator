@@ -7,7 +7,6 @@ class Services {
     pb
     isLoading = false
 
-    // todo: this should be refactor , its not optimal way
     async checkAuth() {
         console.log("🔐 [checkAuth] Starting authentication check");
         const cacheKey = "auth/cookie"
@@ -15,15 +14,13 @@ class Services {
         if (cachedToken) {
             this.pb.authStore.save(cachedToken)
             console.log("✓ [checkAuth] Using cached token");
-
             return true;
         } else {
-            // if (this.isLoading) return
             this.isLoading = true;
             await new Promise((resolve, reject) => {
                 console.log("🔐 [checkAuth] Authenticating with credentials...");
                 return this.pb.admins.authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD).then(() => {
-                    cacheData.put(cacheKey, this.pb.authStore.token, 1000 * 60 * 60 * 24 * 1); // 1 days 
+                    cacheData.put(cacheKey, this.pb.authStore.token, 1000 * 60 * 60 * 24 * 1);
                     console.log("✓ [checkAuth] New token obtained and cached");
                 }).catch(e => {
                     console.error("✗ [checkAuth] Authentication failed:", e?.message || e);
@@ -34,39 +31,50 @@ class Services {
             })
         }
     }
+
     constructor() {
         this.pb = pocketbaseInstance()
         this.pb.autoCancellation(false)
     }
-    // save roadmap
+
     async saveRoadmap(data) {
         return await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS).create(data);
     }
-    // recent roadmaps
+
     async getRecents() {
-        return await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_RECENTS).getList(1, 50, {
-            expand: "category",
-            sort: "-created"
+        // ✅ FIX: Query roadmaps directly (not the view) so unverified roadmaps
+        // show up too — the roadmaps_recents view filters WHERE verified=1
+        // which hides all newly generated roadmaps until manually verified.
+        return await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS).getList(1, 20, {
+            sort: "-created",
+            fields: "id,title,code,category,verified,created"
         });
     }
-    // roadmap details + likes
+
     async getRoadmapByCode({ code, client_ip }) {
         const data = await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS).getFirstListItem(`code = "${code}"`);
-        let likes = 0
+
+        // ✅ FIX: roadmaps_likes view uses INNER JOIN so new roadmaps with
+        // 0 likes have no row in the view → getOne() throws "no rows".
+        // We now safely default to 0 without logging a false error.
+        let likes = 0;
         try {
-            likes = (await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_LIKES).getOne(data.id)).likes
+            const likesRow = await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_LIKES).getOne(data.id);
+            likes = likesRow?.likes ?? 0;
         } catch (e) {
-            // nothing really
+            // No row = 0 likes (expected for new roadmaps — not a real error)
+            likes = 0;
         }
         data.likes = likes;
+
         try {
-            data.is_liked = (await this.getRoadmapClientLike({ roadmap_id: data.id, client_ip })) != null
+            data.is_liked = (await this.getRoadmapClientLike({ roadmap_id: data.id, client_ip })) != null;
         } catch (e) {
-            data.is_liked = false
+            data.is_liked = false;
         }
         return data;
     }
-    // categories 
+
     async getCategories() {
         console.log("📦 [getCategories] Fetching categories from PocketBase...");
         try {
@@ -80,27 +88,24 @@ class Services {
             throw e;
         }
     }
-    // roadmaps by category + pagination
+
     async getRoadmapsByCategorySlug({ page = 1, perPage = 24, slug } = {}) {
-        const category = await this.pb.collection(POCKETBASE_COLLECTIONS.CATEGORIES_EXTRA).getFirstListItem(`slug="${slug}"`)
+        const category = await this.pb.collection(POCKETBASE_COLLECTIONS.CATEGORIES_EXTRA).getFirstListItem(`slug="${slug}"`);
         const items = await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_EXTRA).getList(page, perPage, {
             filter: `category="${category.id}"`,
             sort: "-created"
         });
-        return {
-            items,
-            category
-        }
+        return { items, category };
     }
-    // isLiked?client_ip=x.x.x.x&roadmap_id=xxx
+
     async getRoadmapClientLike({ roadmap_id, client_ip } = {}) {
-        return await this.pb.collection(POCKETBASE_COLLECTIONS.LIKES).getFirstListItem(`roadmap="${roadmap_id}" && client_ip="${client_ip}"`)
+        return await this.pb.collection(POCKETBASE_COLLECTIONS.LIKES).getFirstListItem(`roadmap="${roadmap_id}" && client_ip="${client_ip}"`);
     }
-    // like?roadmap_id=xx&type=remove
+
     async likeRoadmap({ roadmap_id, type = "add", client_ip } = {}) {
-        let oldLike = null
+        let oldLike = null;
         try {
-            oldLike = await this.getRoadmapClientLike({ roadmap_id, client_ip })
+            oldLike = await this.getRoadmapClientLike({ roadmap_id, client_ip });
         } catch (e) { }
         if (type == "add") {
             if (!oldLike) {
@@ -117,22 +122,18 @@ class Services {
             return false;
         }
     }
-    // roadmaps chart
+
     async getRoadmapsChart({ page = 1, perPage = 30 } = {}) {
-        return await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_CHART).getList(page, perPage)
+        return await this.pb.collection(POCKETBASE_COLLECTIONS.ROADMAPS_CHART).getList(page, perPage);
     }
-    // soon
-    // views by google analytics api + cache 
 }
 
 export const backendServices = new Proxy(new Services(), {
     get(target, propKey, receiver) {
         const origMethod = target[propKey];
         if (propKey === "checkAuth") {
-            // If the method being called is "checkAuth", just return the original method
             return origMethod;
         } else {
-            // Otherwise, return a new function that first calls "checkAuth", then calls the original method
             return async function (...args) {
                 await target.checkAuth();
                 const result = await origMethod.apply(target, args);

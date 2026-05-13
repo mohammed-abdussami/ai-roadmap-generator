@@ -36,7 +36,8 @@ const Footer = () => {
             </Row>
             <Spacer y={2} />
             <Text className={"note"}>
-                We are using Open Ai GPT and do not refer to its data scientifically. The data is only collected by artificial intelligence.
+                This Project Was Build by " MOHAMMED ABDUS SAMI {160422733078} , MOHAMMED ABDUL REHMAN {160422733120} ,SYED MAHER ALI {160422733309} "
+                We are using NVIDIA NIM AI and do not refer to its data scientifically. The data is only collected by artificial intelligence.
             </Text>
             <Spacer y={2} />
         </ComponentWithStyle>

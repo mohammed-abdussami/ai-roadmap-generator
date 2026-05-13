@@ -1,47 +1,43 @@
+// src/pages/api/roadmap/generate.js
+import OpenAI from "openai";
 import { backendServices } from "@/backend/services/services";
 import openAiInstance from "@/shared/helper/openai";
+import cacheData from "memory-cache";
+import { RECENTS_CACHE_KEY } from "./recents";
 
 export default async function handler(req, res) {
   try {
     const title = req.query.title;
     const token = req.query.token;
-    // config
-    const maxItems = 30
-    const minItems = 15
-    const minLevels = 5
-    const debug = true
+    const maxItems = 30;
+    const minItems = 15;
+    const minLevels = 5;
+    const debug = true;
+
     if (!title) {
-      return res.status(400).json({
-        ok: false,
-        message: "bad request params"
-      })
+      return res.status(400).json({ ok: false, message: "bad request params" });
     }
-    let isFinished = false
-    
-    // Wrap categories fetch with error handling
+
     let cats;
     try {
       cats = await backendServices.getCategories();
     } catch (err) {
-      console.error("❌ Error fetching categories:", err.message);
-      return res.status(500).json({
-        ok: false,
-        message: "Failed to fetch categories: " + err.message
-      });
+      console.error("❌ Error fetching categories:", err?.message || err);
+      return res.status(500).json({ ok: false, message: "Failed to fetch categories: " + (err?.message || err) });
     }
-    
-    const categoriesList = cats.items.map(item => item.title).join(" | ")
 
-    const findCatId = (title) => {
-      const found = cats.items.find(item => item.title.toLowerCase() === title.trim().toLowerCase());
+    const categoriesList = (cats.items || []).map(item => item.title).join(" | ");
+
+    const findCatId = (titleStr) => {
+      const found = (cats.items || []).find(item => item.title.toLowerCase() === titleStr.trim().toLowerCase());
       if (!found) {
-        console.warn(`⚠️  Category "${title}" not found, defaulting to "Other"`);
-        const other = cats.items.find(item => item.title.toLowerCase() === "other");
-        return other ? other.id : cats.items[0].id; // fallback to first category
+        console.warn(`⚠️  Category "${titleStr}" not found, defaulting to "Other"`);
+        const other = (cats.items || []).find(item => item.title.toLowerCase() === "other");
+        return other ? other.id : (cats.items && cats.items[0] ? cats.items[0].id : null);
       }
       return found.id;
-    }
-    //  make minimum ${eachLevelItemsCount} items in first ${maximumLevels} levels
+    };
+
     const basePrompt = `based on my prompt , make up to date roadmap
 important response rules :
 - collapse response in one line , remove space and new lines 
@@ -74,149 +70,119 @@ important items and levels rules:
 - no duplicate subjects
 
 prompt: 
-${title}`
-    const openai = openAiInstance(token)
+${title}`;
+
+    const client = token ? openAiInstance(token) : openAiInstance();
+
     const messages = [];
+    messages.push({ role: "user", content: basePrompt });
 
-    messages.push({
-      "role": "user",
-      "content": basePrompt,
-
-    })
-    var startTime = performance.now()
+    let isFinished = false;
     let i = 0;
-    const maxSteps = 3
+    const maxSteps = 3;
+    const startTime = Date.now();
+
     while (!isFinished) {
       try {
-        console.log(`[Step ${i}] Making OpenAI API call...`);
-        const openai_res = await openai.createChatCompletion({
-          model: "gpt-3.5-turbo",
-          temperature: 0.4,
+        if (debug) console.log(`[Step ${i}] Calling NVIDIA model...`);
+        const openai_res = await client.chat.completions.create({
+          model: "meta/llama-3.3-70b-instruct",
           messages,
-          max_tokens: 1100 // max 35~  items
+          temperature: 0.2,
+          top_p: 0.7,
+          max_tokens: 1024,
         });
-        console.log(`[Step ${i}] OpenAI response received`);
-        // console.log(i, "debug", JSON.stringify(openai_res.data.choices, undefined, 1));
-        if (openai_res.data.choices.length) {
-          const text = openai_res.data.choices[0].message.content.trim();
-          console.log(`[Step ${i}] Text: ${text.substring(0, 100)}...`);
-          // sometimes result is not correct and has @finish in the outset , so thats should be ignore
-          if (text.match('@finish')) {
-            // we should close loop when gpt has @finish in the end
-            if (text != "@finish") {
-              isFinished = true
+
+        if (openai_res?.choices?.length) {
+          const text = openai_res.choices[0].message.content.trim();
+          if (debug) console.log(`[Step ${i}] Received text preview: ${text.substring(0, 120)}...`);
+
+          if (text.match(/@finish/)) {
+            if (text !== "@finish") {
+              isFinished = true;
             }
           }
-          const newRes = text.replace(/\@finish/, '').replace(/\n/, '')
-          messages.push({
-            "role": "assistant",
-            "content": newRes
-          })
-          if (debug) {
-            console.log(`step ${i}: ${newRes}`);
-          }
+
+          const newRes = text.replace(/\@finish/g, '').replace(/\n/g, '');
+          messages.push({ role: "assistant", content: newRes });
+
+          if (debug) console.log(`[Step ${i}] Assistant content appended`);
+        } else {
+          if (debug) console.warn(`[Step ${i}] No choices returned from model`);
         }
       } catch (e) {
-        isFinished = true
-        console.error(`❌ [Step ${i}] OpenAI Error:`, e?.message);
-        if (debug) {
-          console.log(e);
-          console.log(e?.response?.data);
-        }
+        isFinished = true;
+        console.error(`❌ [Step ${i}] NVIDIA/OpenAI client error:`, e?.message || e);
         return res.status(500).json({
           ok: false,
-          message: `OpenAI Error at step ${i}: ` + e?.message,
-          error: e?.response?.data
-        })
+          message: `AI Error at step ${i}: ` + (e?.message || "unknown"),
+          error: e?.response?.data || null
+        });
       }
+
       if (i >= maxSteps) {
-        if (debug) {
-          console.log("max steps reached");
-        }
-        isFinished = true
+        if (debug) console.log("max steps reached");
+        isFinished = true;
       }
       i++;
     }
 
-    messages.shift(); // first item is prompt
-
-    let ai_res = ''
+    messages.shift();
+    let ai_res = "";
     for (const message of messages) {
       ai_res += message.content;
     }
 
-    // normalize json result
-    ai_res = ai_res.replace(/\n$/g, '');
-    ai_res = ai_res.trim()
+    ai_res = ai_res.replace(/\n$/g, '').trim();
+    if (ai_res.at(-1) !== "}") ai_res += "}";
 
-    if (ai_res.at(-1) != "}") {
-      ai_res += '}'
-    }
     try {
-      let obj = JSON.parse(ai_res);
-      console.log("✓ JSON parsed successfully");
+      const obj = JSON.parse(ai_res);
+      if (debug) console.log("✓ JSON parsed successfully");
 
-      const categoryTitle = obj.category;
-      console.log("📁 Category:", categoryTitle);
+      const categoryTitle = obj.category || "";
       const catId = findCatId(categoryTitle);
-      console.log("📁 Category ID:", catId);
-      let roadmap = obj.roadmap
-      // sometimes gpt not giving root item , so we add it manually
-      const rootIndex = roadmap.findIndex(item => item.id == 0);
-      if (rootIndex == -1) {
-        roadmap.push({
-          id: 0,
-          level: 0
-        })
+      let roadmap = obj.roadmap || [];
+
+      const rootIndex = roadmap.findIndex(item => item.id === 0);
+      if (rootIndex === -1) {
+        roadmap.push({ id: 0, level: 0, title });
       } else {
-        if (roadmap[rootIndex]?.title?.trim() == "Root") {
-          roadmap[rootIndex].title = title
+        if (roadmap[rootIndex]?.title?.trim() === "Root") {
+          roadmap[rootIndex].title = title;
         }
       }
-      // remove null titles
-      roadmap = roadmap.filter(item => item?.title && item?.title != '')
 
-      // end
+      roadmap = roadmap.filter(item => item?.title && item?.title !== "");
 
-      // save roadmap
-      const code = (Math.random() + 1).toString(36).substring(5)
-      console.log("💾 Saving roadmap with code:", code);
-
-      var endTime = performance.now()
-
+      const code = (Math.random() + 1).toString(36).substring(5);
+      const endTime = Date.now();
       const saveRes = await backendServices.saveRoadmap({
         category: catId,
         code,
         title,
         data: JSON.stringify(roadmap),
         prompt: basePrompt,
-        generate_time: Math.floor((endTime - startTime) / 1000) // save seconds
-      })
-      console.log("✓ Roadmap saved successfully");
+        generate_time: Math.floor((endTime - startTime) / 1000)
+      });
 
-      return res.status(200).json({
-        ok: true,
-        data: {
-          roadmap,
-          code,
-        }
-      })
+      if (debug) console.log("✓ Roadmap saved:", saveRes?.id || saveRes);
+
+      // ✅ FIX: Bust the recents cache so new roadmap appears immediately
+      cacheData.del(RECENTS_CACHE_KEY);
+      if (debug) console.log("✓ Recents cache cleared");
+
+      return res.status(200).json({ ok: true, data: { roadmap, code } });
     } catch (e) {
-      console.error("❌ Processing error:", e?.message);
+      console.error("❌ Processing error:", e?.message || e);
       if (debug) {
         console.log("AI Response was:", ai_res);
         console.log(e);
       }
-      return res.status(500).json({
-        ok: false,
-        message: e.message
-      })
+      return res.status(500).json({ ok: false, message: e?.message || "invalid AI response" });
     }
   } catch (err) {
-    console.error("❌ Global handler error:", err.message, err);
-    return res.status(500).json({
-      ok: false,
-      message: "Server error: " + err.message
-    })
+    console.error("❌ Global handler error:", err?.message || err);
+    return res.status(500).json({ ok: false, message: "Server error: " + (err?.message || err) });
   }
 }
